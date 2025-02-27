@@ -68,15 +68,17 @@ class PomodoroTimer(QWidget):
         buttons = [
             ("New task", self.add_item),
             ("Delete task", self.delete_item),
-            ("Clear list", self.clear_list),
-            ("Start", self.start_timer)
+            ("Clear list", self.clear_list)           
         ]
-        
-    
         for text, handler in buttons:
             btn = QPushButton(text)
             btn.clicked.connect(handler)
             list_layout.addWidget(btn)
+
+        self.start_button = QPushButton("Start")
+        self.start_button.clicked.connect(self.start_timer)
+        self.start_button.setShortcut(QKeySequence("Return"))
+        list_layout.addWidget(self.start_button)
 
         main_layout.addLayout(list_layout, stretch=4)
         
@@ -208,6 +210,12 @@ class PomodoroTimer(QWidget):
             return
 
         self.time_label.setText(f"{mins:02d}:{secs:02d}")
+        
+    def blink_icon(self):
+        if self.tray_icon.icon().isNull():
+            self.tray_icon.setIcon(QIcon(resource_path('images/done.ico')))
+        else:
+            self.tray_icon.setIcon(QIcon())
 
     def complete_pomodoro(self):
         item = self.todo_list.currentItem()
@@ -218,6 +226,22 @@ class PomodoroTimer(QWidget):
             item.setText(f"{name} {circles}")
             item.setData(Qt.UserRole, (name, count))
             self.save_tasks()
+            if self.play_sound_checkbox.isChecked():
+                p = pyaudio.PyAudio()
+                stream = p.open(format=pyaudio.paFloat32, channels=1, rate=44100, output=True)
+                volume = 0.5
+                frequency = 2500
+                duration = 3
+                s = (np.sin(2*np.pi*np.arange(44100*duration)*frequency/44100)).astype(np.float32)
+                stream.write(volume*s)
+                stream.stop_stream()
+                stream.close()
+                p.terminate()
+            self.tray_icon.showMessage("Pomodoro Timer", "Timer finished")
+            self.tray_icon.setIcon(QIcon(resource_path('images/done.ico')))
+            self.blink_timer = QTimer()
+            self.blink_timer.timeout.connect(self.blink_icon)
+            self.blink_timer.start(500)  # 500 Millisekunden
 
     def save_tasks(self):
         tasks = []
@@ -261,15 +285,27 @@ class PomodoroTimer(QWidget):
         except FileNotFoundError:
             pass
 
+
+
     def delete_item(self):
         row = self.todo_list.currentRow()
         if row != -1:
             self.todo_list.takeItem(row)
             self.save_tasks()
+            if self.timer.isActive():
+                self.timer.stop()
+                self.time_label.setText("25:00")
+                self.error_label.setText("")
+                self.tray_icon.setIcon(QIcon(resource_path('images/tomato.ico')))
 
     def clear_list(self):
         self.todo_list.clear()
         self.save_tasks()
+        if self.timer.isActive():
+            self.timer.stop()
+            self.time_label.setText("25:00")
+            self.error_label.setText("")
+            self.tray_icon.setIcon(QIcon(resource_path('images/tomato.ico')))
 
     def start_timer(self):
         if self.todo_list.currentItem() is not None:
